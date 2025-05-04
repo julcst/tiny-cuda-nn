@@ -115,7 +115,7 @@ __global__ void kernel_one_blob_diffuse_soa(
 	const uint32_t n_bins = 1 << num_bins_log2;
 	T* out = (data_out + i + j * n_bins * num_elements);
 	if (isnan(x)) {
-		*out = (T)1.0f / ((float) n_bins);
+		*out = ((T) 1.0f) / ((T) n_bins);
 		return;
 	}
 
