@@ -158,7 +158,7 @@ __global__ void kernel_one_blob_diffuse_backward(
 		const float right_boundary = scalbnf(k+1, -num_bins_log2);
 		const float right_cdf = quartic_cdf_deriv(right_boundary - x, n_bins) + quartic_cdf_deriv(right_boundary - x - 1.0f, n_bins) + quartic_cdf_deriv(right_boundary - x + 1.0f, n_bins);
 
-		float deriv = isnan(x) ? 1.0f / ((float) n_bins) : left_cdf - right_cdf;
+		float deriv = isnan(x) ? (1.0f / ((float) n_bins)) : (left_cdf - right_cdf);
 
 		left_cdf = right_cdf;
 
