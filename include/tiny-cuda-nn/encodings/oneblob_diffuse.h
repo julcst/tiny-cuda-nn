@@ -114,10 +114,6 @@ __global__ void kernel_one_blob_diffuse_soa(
 
 	const uint32_t n_bins = 1 << num_bins_log2;
 	T* out = (data_out + i + j * n_bins * num_elements);
-	if (isnan(x)) {
-		*out = ((T) 1.0f) / ((T) n_bins);
-		return;
-	}
 
 	float left_cdf = quartic_cdf(-x, n_bins) + quartic_cdf(-x - 1.0f, n_bins) + quartic_cdf(-x + 1.0f, n_bins);
 
@@ -125,7 +121,7 @@ __global__ void kernel_one_blob_diffuse_soa(
 		const float right_boundary = scalbnf(k+1, -num_bins_log2);
 		const float right_cdf = quartic_cdf(right_boundary - x, n_bins) + quartic_cdf(right_boundary - x - 1.0f, n_bins) + quartic_cdf(right_boundary - x + 1.0f, n_bins);
 
-		*out = (T)(right_cdf - left_cdf);
+		*out = isnan(x) ? ((T) 1.0f) / ((T) n_bins) : (T)(right_cdf - left_cdf);
 
 		left_cdf = right_cdf;
 		out += num_elements;
@@ -158,7 +154,7 @@ __global__ void kernel_one_blob_diffuse_backward(
 		const float right_boundary = scalbnf(k+1, -num_bins_log2);
 		const float right_cdf = quartic_cdf_deriv(right_boundary - x, n_bins) + quartic_cdf_deriv(right_boundary - x - 1.0f, n_bins) + quartic_cdf_deriv(right_boundary - x + 1.0f, n_bins);
 
-		float deriv = isnan(x) ? (1.0f / ((float) n_bins)) : (left_cdf - right_cdf);
+		float deriv = isnan(x) ? 0.0f : (left_cdf - right_cdf);
 
 		left_cdf = right_cdf;
 
