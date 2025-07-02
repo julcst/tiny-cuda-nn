@@ -43,14 +43,19 @@
 
 namespace tcnn {
 
-template <typename F>
+template <typename F, bool reflect = false>
 __device__ inline float one_blob_subwarp_aligned(F kernel, MatrixView<const float> data_in, const uint32_t elem_index, const uint32_t encoded_index, const uint32_t num_bins_log2) {
 	const uint32_t n_bins = 1 << num_bins_log2;
 	const uint32_t bin_index = encoded_index & (n_bins - 1);
 	const float x = data_in(encoded_index >> num_bins_log2, elem_index);
 
 	const float left_boundary = scalbnf(bin_index, -num_bins_log2);
-	float left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary - x - 1.0f, n_bins) + kernel(left_boundary - x + 1.0f, n_bins);
+
+	if constexpr (reflect) {
+		float left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary + x - 2.0f, n_bins) + kernel(left_boundary + x, n_bins);
+	} else {
+		float left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary - x - 1.0f, n_bins) + kernel(left_boundary - x + 1.0f, n_bins);
+	}
 
 	// OneBlob needs an evaluation for both the left and the right boundary.
 	// Compute cost can be saved by computing just one boundary and shuffling the result of the next from the neighboring lane.
@@ -81,7 +86,7 @@ __device__ inline float one_blob(F kernel, const float* __restrict__ data_in, co
 	return right_cdf - left_cdf;
 }
 
-template <typename T>
+template <typename T, bool reflect = false>
 __global__ void kernel_one_blob(
 	const uint32_t num_elements,
 	const uint32_t num_bins_log2,
@@ -92,10 +97,11 @@ __global__ void kernel_one_blob(
 	const uint32_t j = threadIdx.x;
 	if (i >= num_elements) return;
 
+	// TODO
 	data_out(i)[j] = (T)one_blob_subwarp_aligned(quartic_cdf, data_in, i, j, num_bins_log2);
 }
 
-template <typename T>
+template <typename T, bool reflect = false>
 __global__ void kernel_one_blob_soa(
 	const uint32_t num_elements,
 	const uint32_t num_bins_log2,
@@ -113,11 +119,20 @@ __global__ void kernel_one_blob_soa(
 	const uint32_t n_bins = 1 << num_bins_log2;
 	T* out = (data_out + i + j * n_bins * num_elements);
 
-	float left_cdf = quartic_cdf(-x, n_bins) + quartic_cdf(-x - 1.0f, n_bins) + quartic_cdf(-x + 1.0f, n_bins);
+	if constexpr (reflect) {
+		float left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary + x - 2.0f, n_bins) + kernel(left_boundary + x, n_bins);
+	} else {
+		float left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary - x - 1.0f, n_bins) + kernel(left_boundary - x + 1.0f, n_bins);
+	}
 
 	for (uint32_t k = 0; k < n_bins; ++k) {
 		const float right_boundary = scalbnf(k+1, -num_bins_log2);
-		const float right_cdf = quartic_cdf(right_boundary - x, n_bins) + quartic_cdf(right_boundary - x - 1.0f, n_bins) + quartic_cdf(right_boundary - x + 1.0f, n_bins);
+
+		if constexpr (reflect) {
+			const float right_cdf = kernel(right_boundary - x, n_bins) + kernel(right_boundary + x - 2.0f, n_bins) + kernel(right_boundary + x, n_bins);
+		} else {
+			const float right_cdf = kernel(right_boundary - x, n_bins) + kernel(right_boundary - x - 1.0f, n_bins) + kernel(right_boundary - x + 1.0f, n_bins);
+		}
 
 		*out = (T)(right_cdf - left_cdf);
 
@@ -146,11 +161,20 @@ __global__ void kernel_one_blob_backward(
 
 	float result = 0;
 
-	float left_cdf = quartic_cdf_deriv(-x, n_bins) + quartic_cdf_deriv(-x - 1.0f, n_bins) + quartic_cdf_deriv(-x + 1.0f, n_bins);
+	if constexpr (reflect) {
+		float left_cdf = quartic_cdf_deriv(-x, n_bins) + quartic_cdf_deriv(x + 2.0f, n_bins) + quartic_cdf_deriv(x, n_bins);
+	} else {
+		float left_cdf = quartic_cdf_deriv(-x, n_bins) + quartic_cdf_deriv(-x - 1.0f, n_bins) + quartic_cdf_deriv(-x + 1.0f, n_bins);
+	}
 
 	for (uint32_t k = 0; k < n_bins; ++k) {
 		const float right_boundary = scalbnf(k+1, -num_bins_log2);
-		const float right_cdf = quartic_cdf_deriv(right_boundary - x, n_bins) + quartic_cdf_deriv(right_boundary - x - 1.0f, n_bins) + quartic_cdf_deriv(right_boundary - x + 1.0f, n_bins);
+
+		if constexpr (reflect) {
+			const float right_cdf = quartic_cdf_deriv(right_boundary - x, n_bins) + quartic_cdf_deriv(right_boundary + x + 2.0f, n_bins) + quartic_cdf_deriv(right_boundary + x, n_bins);
+		} else {
+			const float right_cdf = quartic_cdf_deriv(right_boundary - x, n_bins) + quartic_cdf_deriv(right_boundary - x - 1.0f, n_bins) + quartic_cdf_deriv(right_boundary - x + 1.0f, n_bins);
+		}
 
 		float deriv = left_cdf - right_cdf;
 
@@ -196,7 +220,7 @@ public:
 			const uint32_t n_threads = threads.x * threads.y;
 			const dim3 blocks = { div_round_up(input.n() * m_n_output_dims, n_threads), 1, 1 };
 
-			kernel_one_blob<T><<<blocks, threads, 0, stream>>>(
+			kernel_one_blob<T, reflect><<<blocks, threads, 0, stream>>>(
 				input.n(),
 				num_bins_log2,
 				input.view(),
@@ -213,7 +237,7 @@ public:
 			const uint32_t n_threads = threads.x * threads.y;
 			const dim3 blocks = { div_round_up(input.n() * m_n_dims_to_encode, n_threads), 1, 1 };
 
-			kernel_one_blob_soa<T><<<blocks, threads, 0, stream>>>(
+			kernel_one_blob_soa<T, reflect><<<blocks, threads, 0, stream>>>(
 				input.n(),
 				num_bins_log2,
 				m_n_dims_to_encode,
@@ -251,7 +275,7 @@ public:
 		const uint32_t n_threads = threads.x * threads.y;
 		const dim3 blocks = { div_round_up(input.n() * m_n_dims_to_encode, n_threads), 1, 1 };
 
-		kernel_one_blob_backward<T><<<blocks, threads, 0, stream>>>(
+		kernel_one_blob_backward<T, reflect><<<blocks, threads, 0, stream>>>(
 			input.n(),
 			m_n_dims_to_encode,
 			num_bins_log2,
@@ -294,10 +318,12 @@ public:
 		return {
 			{"otype", "OneBlob"},
 			{"n_bins", m_n_bins},
+			{"reflect", reflect}
 		};
 	}
 
 private:
+	bool reflect = false;
 	uint32_t m_n_bins;
 	uint32_t m_n_dims_to_encode;
 
