@@ -96,9 +96,8 @@ __global__ void kernel_one_blob(
 	const uint32_t i = blockIdx.x * blockDim.y + threadIdx.y;
 	const uint32_t j = threadIdx.x;
 	if (i >= num_elements) return;
-
-	// TODO
-	data_out(i)[j] = (T)one_blob_subwarp_aligned(quartic_cdf, data_in, i, j, num_bins_log2);
+	
+	data_out(i)[j] = (T)one_blob_subwarp_aligned<decltype(quartic_cdf), reflect>(quartic_cdf, data_in, i, j, num_bins_log2);
 }
 
 template <typename T, bool reflect = false>
