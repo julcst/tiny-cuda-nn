@@ -36,6 +36,7 @@
 #include <tiny-cuda-nn/encodings/identity.h>
 #include <tiny-cuda-nn/encodings/oneblob.h>
 #include <tiny-cuda-nn/encodings/oneblob_diffuse.h>
+#include <tiny-cuda-nn/encodings/oneblob_reflect.h>
 #include <tiny-cuda-nn/encodings/spherical_harmonics.h>
 #include <tiny-cuda-nn/encodings/triangle_wave.h>
 
@@ -82,8 +83,11 @@ auto register_builtin_encodings() {
 	register_encoding<T>(factories, "OneBlob", [](uint32_t n_dims_to_encode, const json& encoding) {
 		return new OneBlobEncoding<T>{encoding.value("n_bins", 16u), n_dims_to_encode};
 	});
+	register_encoding<T>(factories, "OneBlobReflect", [](uint32_t n_dims_to_encode, const json& encoding) {
+		return new OneBlobReflectEncoding<T>{encoding.value("n_bins", 16u), n_dims_to_encode, encoding.value("reflect", false)};
+	});
 	register_encoding<T>(factories, "OneBlobDiffuse", [](uint32_t n_dims_to_encode, const json& encoding) {
-		return new OneBlobDiffuseEncoding<T>{encoding.value("n_bins", 16u), n_dims_to_encode, encoding.value("reflect", false)};
+		return new OneBlobDiffuseEncoding<T>{encoding.value("n_bins", 16u), n_dims_to_encode};
 	});
 
 	register_encoding<T>(factories, "SphericalHarmonics", [](uint32_t n_dims_to_encode, const json& encoding) {
