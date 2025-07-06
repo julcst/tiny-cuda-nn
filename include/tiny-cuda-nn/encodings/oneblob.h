@@ -51,10 +51,12 @@ __device__ inline float one_blob_subwarp_aligned(F kernel, MatrixView<const floa
 
 	const float left_boundary = scalbnf(bin_index, -num_bins_log2);
 
-	if constexpr (reflect) {
-		float left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary + x - 2.0f, n_bins) + kernel(left_boundary + x, n_bins);
+	float left_cdf;
+	if (reflect) {
+		printf("left_boundary: %f, x: %f, n_bins: %u\n", left_boundary, x, n_bins);
+		left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary + x - 2.0f, n_bins) + kernel(left_boundary + x, n_bins);
 	} else {
-		float left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary - x - 1.0f, n_bins) + kernel(left_boundary - x + 1.0f, n_bins);
+		left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary - x - 1.0f, n_bins) + kernel(left_boundary - x + 1.0f, n_bins);
 	}
 
 	// OneBlob needs an evaluation for both the left and the right boundary.
@@ -63,9 +65,17 @@ __device__ inline float one_blob_subwarp_aligned(F kernel, MatrixView<const floa
 	// Note that this procedure necessitates making the OneBlob encoding wrap around (hence also the 3 kernel calls above),
 	// which may not always be desired.
 	// If not desired, use the slower implementation without wraparound below.
-	float right_cdf = __shfl_sync(0xffffffff, left_cdf, bin_index + 1, n_bins);
-	if (bin_index == n_bins - 1) {
-		right_cdf += 1; // The right CDF must gain a 1 due to wrapping from right to left (it lost one (hopefully) saturated CDF)
+	// float right_cdf = __shfl_sync(0xffffffff, left_cdf, bin_index + 1, n_bins);
+	// if (bin_index == n_bins - 1) {
+	// 	right_cdf += 1; // The right CDF must gain a 1 due to wrapping from right to left (it lost one (hopefully) saturated CDF)
+	// }
+
+	const float right_boundary = scalbnf(bin_index + 1, -num_bins_log2);
+	float right_cdf;
+	if (reflect) {
+		right_cdf = kernel(right_boundary - x, n_bins) + kernel(right_boundary + x - 2.0f, n_bins) + kernel(right_boundary + x, n_bins);
+	} else {
+		right_cdf = kernel(right_boundary - x, n_bins) + kernel(right_boundary - x - 1.0f, n_bins) + kernel(right_boundary - x + 1.0f, n_bins);
 	}
 
 	return right_cdf - left_cdf;
@@ -118,19 +128,21 @@ __global__ void kernel_one_blob_soa(
 	const uint32_t n_bins = 1 << num_bins_log2;
 	T* out = (data_out + i + j * n_bins * num_elements);
 
-	if constexpr (reflect) {
-		float left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary + x - 2.0f, n_bins) + kernel(left_boundary + x, n_bins);
+	float left_cdf;
+	if (reflect) {
+		left_cdf = quartic_cdf(-x, n_bins) + quartic_cdf(x - 2.0f, n_bins) + quartic_cdf(x, n_bins);
 	} else {
-		float left_cdf = kernel(left_boundary - x, n_bins) + kernel(left_boundary - x - 1.0f, n_bins) + kernel(left_boundary - x + 1.0f, n_bins);
+		left_cdf = quartic_cdf(-x, n_bins) + quartic_cdf(-x - 1.0f, n_bins) + quartic_cdf(-x + 1.0f, n_bins);
 	}
 
 	for (uint32_t k = 0; k < n_bins; ++k) {
 		const float right_boundary = scalbnf(k+1, -num_bins_log2);
 
-		if constexpr (reflect) {
-			const float right_cdf = kernel(right_boundary - x, n_bins) + kernel(right_boundary + x - 2.0f, n_bins) + kernel(right_boundary + x, n_bins);
+		float right_cdf;
+		if (reflect) {
+			right_cdf = quartic_cdf(right_boundary - x, n_bins) + quartic_cdf(right_boundary + x - 2.0f, n_bins) + quartic_cdf(right_boundary + x, n_bins);
 		} else {
-			const float right_cdf = kernel(right_boundary - x, n_bins) + kernel(right_boundary - x - 1.0f, n_bins) + kernel(right_boundary - x + 1.0f, n_bins);
+			right_cdf = quartic_cdf(right_boundary - x, n_bins) + quartic_cdf(right_boundary - x - 1.0f, n_bins) + quartic_cdf(right_boundary - x + 1.0f, n_bins);
 		}
 
 		*out = (T)(right_cdf - left_cdf);
@@ -140,7 +152,7 @@ __global__ void kernel_one_blob_soa(
 	}
 }
 
-template <typename T>
+template <typename T, bool reflect = false>
 __global__ void kernel_one_blob_backward(
 	const uint32_t num_elements,
 	const uint32_t n_dims_to_encode,
@@ -160,19 +172,21 @@ __global__ void kernel_one_blob_backward(
 
 	float result = 0;
 
-	if constexpr (reflect) {
-		float left_cdf = quartic_cdf_deriv(-x, n_bins) + quartic_cdf_deriv(x + 2.0f, n_bins) + quartic_cdf_deriv(x, n_bins);
+	float left_cdf;
+	if (reflect) {
+		left_cdf = quartic_cdf_deriv(-x, n_bins) + quartic_cdf_deriv(x + 2.0f, n_bins) + quartic_cdf_deriv(x, n_bins);
 	} else {
-		float left_cdf = quartic_cdf_deriv(-x, n_bins) + quartic_cdf_deriv(-x - 1.0f, n_bins) + quartic_cdf_deriv(-x + 1.0f, n_bins);
+		left_cdf = quartic_cdf_deriv(-x, n_bins) + quartic_cdf_deriv(-x - 1.0f, n_bins) + quartic_cdf_deriv(-x + 1.0f, n_bins);
 	}
 
 	for (uint32_t k = 0; k < n_bins; ++k) {
 		const float right_boundary = scalbnf(k+1, -num_bins_log2);
 
-		if constexpr (reflect) {
-			const float right_cdf = quartic_cdf_deriv(right_boundary - x, n_bins) + quartic_cdf_deriv(right_boundary + x + 2.0f, n_bins) + quartic_cdf_deriv(right_boundary + x, n_bins);
+		float right_cdf;
+		if (reflect) {
+			right_cdf = quartic_cdf_deriv(right_boundary - x, n_bins) + quartic_cdf_deriv(right_boundary + x + 2.0f, n_bins) + quartic_cdf_deriv(right_boundary + x, n_bins);
 		} else {
-			const float right_cdf = quartic_cdf_deriv(right_boundary - x, n_bins) + quartic_cdf_deriv(right_boundary - x - 1.0f, n_bins) + quartic_cdf_deriv(right_boundary - x + 1.0f, n_bins);
+			right_cdf = quartic_cdf_deriv(right_boundary - x, n_bins) + quartic_cdf_deriv(right_boundary - x - 1.0f, n_bins) + quartic_cdf_deriv(right_boundary - x + 1.0f, n_bins);
 		}
 
 		float deriv = left_cdf - right_cdf;
@@ -189,7 +203,7 @@ __global__ void kernel_one_blob_backward(
 template <typename T>
 class OneBlobEncoding : public Encoding<T> {
 public:
-	OneBlobEncoding(uint32_t n_bins, uint32_t n_dims_to_encode, bool reflect = false)
+	OneBlobEncoding(uint32_t n_bins, uint32_t n_dims_to_encode, bool reflect)
 	: m_n_bins{n_bins}, m_n_dims_to_encode{n_dims_to_encode}, reflect(reflect) {
 		m_n_output_dims = m_n_dims_to_encode * m_n_bins;
 
@@ -219,12 +233,22 @@ public:
 			const uint32_t n_threads = threads.x * threads.y;
 			const dim3 blocks = { div_round_up(input.n() * m_n_output_dims, n_threads), 1, 1 };
 
-			kernel_one_blob<T, reflect><<<blocks, threads, 0, stream>>>(
-				input.n(),
-				num_bins_log2,
-				input.view(),
-				output->pitched_ptr()
-			);
+			if (reflect) {
+				kernel_one_blob<T, true><<<blocks, threads, 0, stream>>>(
+					input.n(),
+					num_bins_log2,
+					input.view(),
+					output->pitched_ptr()
+				);
+			} else {
+				kernel_one_blob<T, false><<<blocks, threads, 0, stream>>>(
+					input.n(),
+					num_bins_log2,
+					input.view(),
+					output->pitched_ptr()
+				);
+			}
+			
 
 			// Padding
 			parallel_for_gpu_aos(stream, input.n(), m_n_to_pad, [n_output_dims=m_n_output_dims, out=output->pitched_ptr()] __device__ (size_t elem, size_t dim) {
@@ -236,13 +260,23 @@ public:
 			const uint32_t n_threads = threads.x * threads.y;
 			const dim3 blocks = { div_round_up(input.n() * m_n_dims_to_encode, n_threads), 1, 1 };
 
-			kernel_one_blob_soa<T, reflect><<<blocks, threads, 0, stream>>>(
-				input.n(),
-				num_bins_log2,
-				m_n_dims_to_encode,
-				input.view(),
-				output->data()
-			);
+			if (reflect) {
+				kernel_one_blob_soa<T, true><<<blocks, threads, 0, stream>>>(
+					input.n(),
+					num_bins_log2,
+					m_n_dims_to_encode,
+					input.view(),
+					output->data()
+				);
+			} else {
+				kernel_one_blob_soa<T, false><<<blocks, threads, 0, stream>>>(
+					input.n(),
+					num_bins_log2,
+					m_n_dims_to_encode,
+					input.view(),
+					output->data()
+				);
+			}
 
 			// Padding
 			parallel_for_gpu(stream, input.n() * m_n_to_pad, [out=output->data() + input.n() * m_n_dims_to_encode] __device__ (size_t i) {
@@ -274,14 +308,25 @@ public:
 		const uint32_t n_threads = threads.x * threads.y;
 		const dim3 blocks = { div_round_up(input.n() * m_n_dims_to_encode, n_threads), 1, 1 };
 
-		kernel_one_blob_backward<T, reflect><<<blocks, threads, 0, stream>>>(
-			input.n(),
-			m_n_dims_to_encode,
-			num_bins_log2,
-			dL_doutput.view(),
-			input.view(),
-			dL_dinput->view()
-		);
+		if (reflect) {
+			kernel_one_blob_backward<T, true><<<blocks, threads, 0, stream>>>(
+				input.n(),
+				m_n_dims_to_encode,
+				num_bins_log2,
+				dL_doutput.view(),
+				input.view(),
+				dL_dinput->view()
+			);
+		} else {
+			kernel_one_blob_backward<T, false><<<blocks, threads, 0, stream>>>(
+				input.n(),
+				m_n_dims_to_encode,
+				num_bins_log2,
+				dL_doutput.view(),
+				input.view(),
+				dL_dinput->view()
+			);
+		}
 	}
 
 	uint32_t input_width() const override {
