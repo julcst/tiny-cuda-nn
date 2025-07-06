@@ -83,7 +83,7 @@ auto register_builtin_encodings() {
 		return new OneBlobEncoding<T>{encoding.value("n_bins", 16u), n_dims_to_encode};
 	});
 	register_encoding<T>(factories, "OneBlobDiffuse", [](uint32_t n_dims_to_encode, const json& encoding) {
-		return new OneBlobDiffuseEncoding<T>{encoding.value("n_bins", 16u), n_dims_to_encode};
+		return new OneBlobDiffuseEncoding<T>{encoding.value("n_bins", 16u), n_dims_to_encode, encoding.value("reflect", false)};
 	});
 
 	register_encoding<T>(factories, "SphericalHarmonics", [](uint32_t n_dims_to_encode, const json& encoding) {

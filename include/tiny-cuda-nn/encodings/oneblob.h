@@ -189,8 +189,8 @@ __global__ void kernel_one_blob_backward(
 template <typename T>
 class OneBlobEncoding : public Encoding<T> {
 public:
-	OneBlobEncoding(uint32_t n_bins, uint32_t n_dims_to_encode)
-	: m_n_bins{n_bins}, m_n_dims_to_encode{n_dims_to_encode} {
+	OneBlobEncoding(uint32_t n_bins, uint32_t n_dims_to_encode, bool reflect = false)
+	: m_n_bins{n_bins}, m_n_dims_to_encode{n_dims_to_encode}, reflect(reflect) {
 		m_n_output_dims = m_n_dims_to_encode * m_n_bins;
 
 		// Make sure the number of bins is a power of 2---this is required for certain optimizations
