@@ -44,7 +44,7 @@
 namespace tcnn {
 
 template <typename F, bool reflect = false>
-__device__ inline float one_blob_subwarp_aligned(F kernel, MatrixView<const float> data_in, const uint32_t elem_index, const uint32_t encoded_index, const uint32_t num_bins_log2) {
+__device__ inline float one_blob_subwarp_aligned_reflect(F kernel, MatrixView<const float> data_in, const uint32_t elem_index, const uint32_t encoded_index, const uint32_t num_bins_log2) {
 	const uint32_t n_bins = 1 << num_bins_log2;
 	const uint32_t bin_index = encoded_index & (n_bins - 1);
 	const float x = data_in(encoded_index >> num_bins_log2, elem_index);
@@ -82,7 +82,7 @@ __device__ inline float one_blob_subwarp_aligned(F kernel, MatrixView<const floa
 }
 
 template <typename F>
-__device__ inline float one_blob(F kernel, const float* __restrict__ data_in, const uint32_t encoded_index, const uint32_t num_bins_log2) {
+__device__ inline float one_blob_reflect(F kernel, const float* __restrict__ data_in, const uint32_t encoded_index, const uint32_t num_bins_log2) {
 	const uint32_t n_bins = 1 << num_bins_log2;
 	const uint32_t bin_index = encoded_index & (n_bins - 1);
 	const float x = data_in[encoded_index >> num_bins_log2];
@@ -97,7 +97,7 @@ __device__ inline float one_blob(F kernel, const float* __restrict__ data_in, co
 }
 
 template <typename T, bool reflect = false>
-__global__ void kernel_one_blob(
+__global__ void kernel_one_blob_reflect(
 	const uint32_t num_elements,
 	const uint32_t num_bins_log2,
 	MatrixView<const float> data_in,
@@ -107,11 +107,11 @@ __global__ void kernel_one_blob(
 	const uint32_t j = threadIdx.x;
 	if (i >= num_elements) return;
 	
-	data_out(i)[j] = (T)one_blob_subwarp_aligned<decltype(quartic_cdf), reflect>(quartic_cdf, data_in, i, j, num_bins_log2);
+	data_out(i)[j] = (T)one_blob_subwarp_aligned_reflect<decltype(quartic_cdf), reflect>(quartic_cdf, data_in, i, j, num_bins_log2);
 }
 
 template <typename T, bool reflect = false>
-__global__ void kernel_one_blob_soa(
+__global__ void kernel_one_blob_soa_reflect(
 	const uint32_t num_elements,
 	const uint32_t num_bins_log2,
 	const uint32_t num_to_encode,
@@ -153,7 +153,7 @@ __global__ void kernel_one_blob_soa(
 }
 
 template <typename T, bool reflect = false>
-__global__ void kernel_one_blob_backward(
+__global__ void kernel_one_blob_backward_reflect(
 	const uint32_t num_elements,
 	const uint32_t n_dims_to_encode,
 	const uint32_t num_bins_log2,
@@ -234,14 +234,14 @@ public:
 			const dim3 blocks = { div_round_up(input.n() * m_n_output_dims, n_threads), 1, 1 };
 
 			if (reflect) {
-				kernel_one_blob<T, true><<<blocks, threads, 0, stream>>>(
+				kernel_one_blob_reflect<T, true><<<blocks, threads, 0, stream>>>(
 					input.n(),
 					num_bins_log2,
 					input.view(),
 					output->pitched_ptr()
 				);
 			} else {
-				kernel_one_blob<T, false><<<blocks, threads, 0, stream>>>(
+				kernel_one_blob_reflect<T, false><<<blocks, threads, 0, stream>>>(
 					input.n(),
 					num_bins_log2,
 					input.view(),
@@ -261,7 +261,7 @@ public:
 			const dim3 blocks = { div_round_up(input.n() * m_n_dims_to_encode, n_threads), 1, 1 };
 
 			if (reflect) {
-				kernel_one_blob_soa<T, true><<<blocks, threads, 0, stream>>>(
+				kernel_one_blob_soa_reflect<T, true><<<blocks, threads, 0, stream>>>(
 					input.n(),
 					num_bins_log2,
 					m_n_dims_to_encode,
@@ -269,7 +269,7 @@ public:
 					output->data()
 				);
 			} else {
-				kernel_one_blob_soa<T, false><<<blocks, threads, 0, stream>>>(
+				kernel_one_blob_soa_reflect<T, false><<<blocks, threads, 0, stream>>>(
 					input.n(),
 					num_bins_log2,
 					m_n_dims_to_encode,
@@ -309,7 +309,7 @@ public:
 		const dim3 blocks = { div_round_up(input.n() * m_n_dims_to_encode, n_threads), 1, 1 };
 
 		if (reflect) {
-			kernel_one_blob_backward<T, true><<<blocks, threads, 0, stream>>>(
+			kernel_one_blob_backward_reflect<T, true><<<blocks, threads, 0, stream>>>(
 				input.n(),
 				m_n_dims_to_encode,
 				num_bins_log2,
@@ -318,7 +318,7 @@ public:
 				dL_dinput->view()
 			);
 		} else {
-			kernel_one_blob_backward<T, false><<<blocks, threads, 0, stream>>>(
+			kernel_one_blob_backward_reflect<T, false><<<blocks, threads, 0, stream>>>(
 				input.n(),
 				m_n_dims_to_encode,
 				num_bins_log2,
