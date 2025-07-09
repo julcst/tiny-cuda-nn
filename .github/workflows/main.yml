@@ -32,9 +32,6 @@ jobs:
             arch: 89
           - os: ubuntu-22.04
             cuda: "11.7"
-            arch: 89
-          - os: ubuntu-22.04
-            cuda: "11.7"
             arch: 86
           - os: ubuntu-22.04
             cuda: "11.7"
@@ -67,7 +64,7 @@ jobs:
         run: ./dependencies/cuda-cmake-github-actions/scripts/actions/install_cuda_ubuntu.sh
         shell: bash
       - name: CMake
-        run: cmake . -B ${{ env.build_dir }} -DCMAKE_BUILD_TYPE=${{ env.config }}
+        run: cmake . -B ${{ env.build_dir }} -DCMAKE_BUILD_TYPE=${{ env.config }} -DTCNN_BUILD_TESTS=1
       - name: Build
         working-directory: ${{ env.build_dir }}
         run: cmake --build . --target all --verbose -j `nproc`
@@ -80,40 +77,32 @@ jobs:
         include:
           - os: windows-2025
             visual_studio: "Visual Studio 17 2022"
-            cuda: "12.8.0"
+            cuda: "12.9.1"
             arch: 120
           - os: windows-2025
             visual_studio: "Visual Studio 17 2022"
-            cuda: "12.5.0"
+            cuda: "12.6.3"
             arch: 89
-          - os: windows-2025
+          - os: windows-2022
             visual_studio: "Visual Studio 17 2022"
-            cuda: "12.5.0"
+            cuda: "12.6.3"
             arch: 86
-          - os: windows-2019
-            visual_studio: "Visual Studio 16 2019"
-            cuda: "11.5.1"
-            arch: 86
-          - os: windows-2019
-            visual_studio: "Visual Studio 16 2019"
-            cuda: "11.5.1"
+          - os: windows-2022
+            visual_studio: "Visual Studio 17 2022"
+            cuda: "12.6.3"
             arch: 75
-          - os: windows-2019
-            visual_studio: "Visual Studio 16 2019"
-            cuda: "11.5.1"
+          - os: windows-2022
+            visual_studio: "Visual Studio 17 2022"
+            cuda: "12.6.3"
             arch: 70
-          - os: windows-2019
-            visual_studio: "Visual Studio 16 2019"
-            cuda: "11.5.1"
+          - os: windows-2022
+            visual_studio: "Visual Studio 17 2022"
+            cuda: "12.6.3"
             arch: 61
-          - os: windows-2019
-            visual_studio: "Visual Studio 16 2019"
-            cuda: "11.5.1"
+          - os: windows-2022
+            visual_studio: "Visual Studio 17 2022"
+            cuda: "12.6.3"
             arch: 53
-          - os: windows-2019
-            visual_studio: "Visual Studio 16 2019"
-            cuda: "11.5.1"
-            arch: 37
     env:
       build_dir: "build"
       config: "Release"
@@ -129,7 +118,7 @@ jobs:
         shell: powershell
         run: .\dependencies\cuda-cmake-github-actions\scripts\actions\install_cuda_windows.ps1
       - name: CMake
-        run: cmake . -B ${{ env.build_dir }} -G "${{ matrix.visual_studio }}" -A x64
+        run: cmake . -B ${{ env.build_dir }} -G "${{ matrix.visual_studio }}" -A x64 -DTCNN_BUILD_TESTS=1
       - name: Build
         working-directory: ${{ env.build_dir }}
         run: cmake --build . --config ${{ env.config }} --target ALL_BUILD --verbose
