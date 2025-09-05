@@ -41,10 +41,7 @@
 
 namespace tcnn {
 
-static_assert(
-	__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2),
-	"tiny-cuda-nn requires at least CUDA 10.2"
-);
+static_assert(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2), "tiny-cuda-nn requires at least CUDA 10.2");
 
 std::function<void(LogSeverity, const std::string&)> g_log_callback = [](LogSeverity severity, const std::string& msg) {
 	switch (severity) {
@@ -77,6 +74,8 @@ Activation string_to_activation(const std::string& activation_name) {
 		return Activation::ReLU;
 	} else if (equals_case_insensitive(activation_name, "LeakyReLU")) {
 		return Activation::LeakyReLU;
+	} else if (equals_case_insensitive(activation_name, "SiLU")) {
+		return Activation::SiLU;
 	} else if (equals_case_insensitive(activation_name, "Exponential")) {
 		return Activation::Exponential;
 	} else if (equals_case_insensitive(activation_name, "Sigmoid")) {
@@ -99,6 +98,7 @@ std::string to_string(Activation activation) {
 		case Activation::None: return "None";
 		case Activation::ReLU: return "ReLU";
 		case Activation::LeakyReLU: return "LeakyReLU";
+		case Activation::SiLU: return "SiLU";
 		case Activation::Exponential: return "Exponential";
 		case Activation::Sigmoid: return "Sigmoid";
 		case Activation::Sine: return "Sine";
@@ -211,9 +211,7 @@ int cuda_device() {
 	return device;
 }
 
-void set_cuda_device(int device) {
-	CUDA_CHECK_THROW(cudaSetDevice(device));
-}
+void set_cuda_device(int device) { CUDA_CHECK_THROW(cudaSetDevice(device)); }
 
 int cuda_device_count() {
 	int device_count;
@@ -241,9 +239,7 @@ const cudaDeviceProp& cuda_get_device_properties(int device) {
 	return cuda_device_properties().at(device);
 }
 
-std::string cuda_device_name(int device) {
-	return cuda_get_device_properties(device).name;
-}
+std::string cuda_device_name(int device) { return cuda_get_device_properties(device).name; }
 
 uint32_t cuda_compute_capability(int device) {
 	const auto& props = cuda_get_device_properties(device);
@@ -258,8 +254,10 @@ uint32_t cuda_max_supported_compute_capability() {
 		return 80;
 	} else if (cuda_version < 11080) {
 		return 86;
-	} else {
+	} else if (cuda_version < 12080) {
 		return 90;
+	} else {
+		return 120;
 	}
 }
 
@@ -267,13 +265,9 @@ uint32_t cuda_supported_compute_capability(int device) {
 	return std::min(cuda_compute_capability(device), cuda_max_supported_compute_capability());
 }
 
-size_t cuda_max_shmem(int device) {
-	return cuda_get_device_properties(device).sharedMemPerBlockOptin;
-}
+size_t cuda_max_shmem(int device) { return cuda_get_device_properties(device).sharedMemPerBlockOptin; }
 
-uint32_t cuda_max_registers(int device) {
-	return (uint32_t)cuda_get_device_properties(device).regsPerBlock;
-}
+uint32_t cuda_max_registers(int device) { return (uint32_t)cuda_get_device_properties(device).regsPerBlock; }
 
 size_t cuda_memory_granularity(int device) {
 	size_t granularity;
@@ -355,4 +349,4 @@ template <> std::string type_to_string<double>() { return "double"; }
 template <> std::string type_to_string<float>() { return "float"; }
 template <> std::string type_to_string<__half>() { return "__half"; }
 
-}
+} // namespace tcnn
