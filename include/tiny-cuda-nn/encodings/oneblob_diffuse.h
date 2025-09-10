@@ -299,6 +299,87 @@ public:
 		};
 	}
 
+	std::string generate_device_function(const std::string& name) const override {
+		std::ostringstream body;
+		body << dfmt(1, R"(
+				if (fwd_ctx) {{
+					input.to_array((float*)fwd_ctx);
+				}}
+
+				{VEC_OUT} result;
+				TCNN_PRAGMA_UNROLL
+				for (uint32_t i = 0; i < {N_DIMS}; ++i) {{
+					float x = input[i];
+					float left_cdf = quartic_cdf(-x, {N_BINS}) + quartic_cdf(-x - 1.0f, {N_BINS}) + quartic_cdf(-x + 1.0f, {N_BINS});
+
+					TCNN_PRAGMA_UNROLL
+					for (uint32_t k = 0; k < {N_BINS}; ++k) {{
+						const float right_boundary = (float)(k+1) / {N_BINS};
+						const float right_cdf = quartic_cdf(right_boundary - x, {N_BINS}) + quartic_cdf(right_boundary - x - 1.0f, {N_BINS}) + quartic_cdf(right_boundary - x + 1.0f, {N_BINS});
+
+						result[i * {N_BINS} + k] =  isnan(x) ? (({T}) 1.0f) / (({T}) n_bins) : ({T})(right_cdf - left_cdf);
+
+						left_cdf = right_cdf;
+					}}
+				}};
+			)",
+			"VEC_IN"_a = this->generate_vec_in(),
+			"VEC_OUT"_a = this->generate_vec_out(),
+			"N_DIMS"_a = this->input_width(),
+			"N_BINS"_a = m_n_bins,
+			"T"_a = type_to_string<T>()
+		) << "\n" << dfmt(1, R"(
+				TCNN_PRAGMA_UNROLL
+				for (uint32_t i = {N_OUT}; i < {N_PADDED_OUT}; ++i) {{
+					result[i] = ({T})1.0f;
+				}}
+				return result;
+			)",
+			"N_OUT"_a = m_n_output_dims,
+			"N_PADDED_OUT"_a = this->padded_output_width(),
+			"T"_a = type_to_string<T>()
+		);
+
+		return this->generate_device_function_from_body(name, body.str());
+	}
+
+	std::string generate_backward_device_function(const std::string& name, uint32_t n_threads) const override {
+		return this->generate_backward_device_function_from_body(name, dfmt(1, R"(
+				if (!dL_dx) {{
+					return;
+				}}
+
+				{VEC_IN} input((float*)fwd_ctx), result(0.0f);
+
+				TCNN_PRAGMA_UNROLL
+				for (uint32_t i = 0; i < {N_DIMS}; ++i) {{
+					float x = input[i];
+					float left_cdf = quartic_cdf_deriv(-x, {N_BINS}) + quartic_cdf_deriv(-x - 1.0f, {N_BINS}) + quartic_cdf_deriv(-x + 1.0f, {N_BINS});
+
+					TCNN_PRAGMA_UNROLL
+					for (uint32_t k = 0; k < {N_BINS}; ++k) {{
+						const float right_boundary = (float)(k+1) / {N_BINS};
+						const float right_cdf = quartic_cdf_deriv(right_boundary - x, {N_BINS}) + quartic_cdf_deriv(right_boundary - x - 1.0f, {N_BINS}) + quartic_cdf_deriv(right_boundary - x + 1.0f, {N_BINS});
+						
+						const float deriv = isnan(x) ? 0.0f : (left_cdf - right_cdf);
+						result[i] += (float)dL_dy[i * {N_BINS} + k] * deriv;
+
+						left_cdf = right_cdf;
+					}}
+				}};
+
+				*dL_dx = result;
+			)",
+			"VEC_IN"_a = this->generate_vec_in(),
+			"N_DIMS"_a = this->input_width(),
+			"N_BINS"_a = m_n_bins
+		));
+	}
+
+	uint32_t device_function_fwd_ctx_bytes() const override {
+		return this->input_width() * sizeof(float);
+	}
+
 private:
 	uint32_t m_n_bins;
 	uint32_t m_n_dims_to_encode;
